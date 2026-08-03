@@ -381,6 +381,20 @@ country chicken"></textarea>
       <label>Country chicken <input type="number" id="rateCountry" value="300"> ₹ / kg</label>
       <label>Kadai <input type="number" id="rateKadai" value="60"> ₹ / piece</label>
     </div>
+    <h2>Date-specific rates</h2>
+    <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center;">
+      <button class="btn-ghost" id="addOverrideBtn">+ Add date rate</button>
+      <button class="btn-ghost" id="exportOverridesBtn">Export overrides</button>
+      <label class="file-btn" for="importOverridesFile" style="padding:8px 12px;">Import overrides</label>
+      <input type="file" id="importOverridesFile" accept=".csv" style="display:none">
+      <span style="color:var(--ink-soft); font-size:13px;">Create rate overrides for specific dates or ranges.</span>
+    </div>
+    <div class="table-scroll">
+      <table id="overridesTable" style="margin-bottom:12px; width:100%;">
+        <thead><tr><th style="text-align:left; width:22%;">From</th><th style="text-align:left; width:22%;">To</th><th>Broiler</th><th>Country</th><th>Kadai</th><th></th></tr></thead>
+        <tbody id="overridesBody"></tbody>
+      </table>
+    </div>
     <div class="table-scroll">
       <table id="groupTable">
         <thead><tr><th>Menu item</th><th>Goes under</th></tr></thead>
@@ -796,7 +810,192 @@ document.getElementById("groupBody").addEventListener("change", (e) => {
   if (currentRows.length) buildInvoice();
 });
 
-function computeInvoiceRows(rows, groups, rates) {
+// ---------- date-specific rate overrides ----------
+let currentOverrides = [];
+
+function saveOverrides() {
+  try {
+    // normalize entries: ensure dates and numbers, set single-date 'to' when empty
+    currentOverrides = (currentOverrides || []).map(o => {
+      const from = (o.from || '').trim();
+      const to = (o.to || '').trim() || from;
+      const broilerRaw = o.broiler;
+      const countryRaw = o.country;
+      const kadaiRaw = o.kadai;
+      const broiler = (broilerRaw === null || broilerRaw === undefined || broilerRaw === '') ? null : (Number.isFinite(+broilerRaw) ? (+broilerRaw) : null);
+      const country = (countryRaw === null || countryRaw === undefined || countryRaw === '') ? null : (Number.isFinite(+countryRaw) ? (+countryRaw) : null);
+      const kadai = (kadaiRaw === null || kadaiRaw === undefined || kadaiRaw === '') ? null : (Number.isFinite(+kadaiRaw) ? (+kadaiRaw) : null);
+      return { from: from, to: to, broiler: broiler, country: country, kadai: kadai };
+    }).filter(o => o.from);
+    localStorage.setItem('balaji_overrides', JSON.stringify(currentOverrides || []));
+  } catch (e) { /* ignore */ }
+}
+
+function loadOverrides() {
+  try {
+    const raw = localStorage.getItem('balaji_overrides');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) currentOverrides = parsed;
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// load persisted overrides on script start
+loadOverrides();
+
+function renderOverrides() {
+  const body = document.getElementById("overridesBody");
+  body.innerHTML = currentOverrides.map((ov, idx) => `
+    <tr>
+      <td><input type="date" class="ov-from" data-idx="${idx}" value="${ov.from || ""}"></td>
+      <td><input type="date" class="ov-to" data-idx="${idx}" value="${ov.to || ""}"></td>
+      <td><input type="number" class="ov-broiler" data-idx="${idx}" value="${(ov.broiler == null) ? "" : ov.broiler}"></td>
+      <td><input type="number" class="ov-country" data-idx="${idx}" value="${(ov.country == null) ? "" : ov.country}"></td>
+      <td><input type="number" class="ov-kadai" data-idx="${idx}" value="${(ov.kadai == null) ? "" : ov.kadai}"></td>
+      <td><button class="btn-ghost ov-remove" data-idx="${idx}">Remove</button></td>
+    </tr>`).join("");
+
+  // detect overlaps and mark rows
+  try {
+    const ranges = currentOverrides.map(o => ({ from: o.from || '', to: o.to || '' }));
+    const overlaps = new Set();
+    for (let i = 0; i < ranges.length; i++) {
+      for (let j = i + 1; j < ranges.length; j++) {
+        const a = ranges[i], b = ranges[j];
+        if (!a.from || !a.to || !b.from || !b.to) continue;
+        if (a.from <= b.to && b.from <= a.to) { overlaps.add(i); overlaps.add(j); }
+      }
+    }
+    // apply visual marker
+    document.querySelectorAll('#overridesBody tr').forEach((tr, idx) => {
+      if (overlaps.has(idx)) { tr.style.background = 'rgba(193,68,14,0.06)'; tr.title = 'Overlapping override range'; }
+      else { tr.style.background = ''; tr.title = ''; }
+    });
+    const status = document.getElementById('status');
+    if (overlaps.size) { status.textContent = `Warning: ${overlaps.size} overlapping override range(s).`; status.className = 'status err'; }
+    else if (currentOverrides.length) { status.textContent = `Loaded ${currentOverrides.length} override(s).`; status.className = 'status ok'; }
+    else { status.textContent = ''; status.className = 'status'; }
+  } catch (e) { /* ignore */ }
+
+  // attach listeners
+  document.querySelectorAll('#overridesBody input').forEach(inp => {
+    inp.addEventListener('input', (e) => {
+      const i = parseInt(e.target.dataset.idx, 10);
+      if (isNaN(i)) return;
+      const row = currentOverrides[i] || {};
+      if (e.target.classList.contains('ov-from')) row.from = e.target.value;
+      if (e.target.classList.contains('ov-to')) row.to = e.target.value;
+      if (e.target.classList.contains('ov-broiler')) {
+        const v = e.target.value.trim(); row.broiler = v === '' ? null : (isNaN(parseFloat(v)) ? null : parseFloat(v));
+      }
+      if (e.target.classList.contains('ov-country')) {
+        const v = e.target.value.trim(); row.country = v === '' ? null : (isNaN(parseFloat(v)) ? null : parseFloat(v));
+      }
+      if (e.target.classList.contains('ov-kadai')) {
+        const v = e.target.value.trim(); row.kadai = v === '' ? null : (isNaN(parseFloat(v)) ? null : parseFloat(v));
+      }
+      currentOverrides[i] = row;
+      saveOverrides();
+      if (currentRows.length) buildInvoice();
+    });
+  });
+  document.querySelectorAll('#overridesBody .ov-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const i = parseInt(e.target.dataset.idx, 10);
+      currentOverrides.splice(i, 1);
+      renderOverrides();
+      saveOverrides();
+      if (currentRows.length) buildInvoice();
+    });
+  });
+}
+
+document.getElementById('addOverrideBtn').addEventListener('click', (e) => {
+  e.preventDefault();
+  currentOverrides.push({ from: '', to: '', broiler: null, country: null, kadai: null });
+  renderOverrides();
+  saveOverrides();
+});
+
+document.getElementById('exportOverridesBtn').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!currentOverrides.length) return;
+  const lines = ['from,to,broiler,country,kadai'];
+  currentOverrides.forEach(o => {
+    lines.push([o.from || '', o.to || '', (o.broiler == null ? '' : o.broiler), (o.country == null ? '' : o.country), (o.kadai == null ? '' : o.kadai)].join(','));
+  });
+  const csv = lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `balaji_overrides_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+});
+
+document.getElementById('importOverridesFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const text = evt.target.result || '';
+    const rows = text.split(/\r?\n/).map(r => r.trim()).filter(Boolean);
+    if (!rows.length) return;
+    // expect header: from,to,broiler,country,kadai
+    const header = rows[0].split(',').map(h => h.trim().toLowerCase());
+    const expected = ['from','to','broiler','country','kadai'];
+    const okHeader = expected.every((e, i) => header[i] === e);
+    if (!okHeader) {
+      statusEl.textContent = 'Import failed: CSV header must be "from,to,broiler,country,kadai"';
+      statusEl.className = 'status err';
+      return;
+    }
+    const parsed = [];
+    for (let i = 1; i < rows.length; i++) {
+      const parts = rows[i].split(',').map(p => p.trim());
+      if (parts.length < 5) continue;
+      const from = parts[0];
+      const to = parts[1] || from;
+      // basic date validation YYYY-MM-DD
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) continue;
+      const broilerVal = parts[2] === '' ? null : (isNaN(parseFloat(parts[2])) ? null : parseFloat(parts[2]));
+      const countryVal = parts[3] === '' ? null : (isNaN(parseFloat(parts[3])) ? null : parseFloat(parts[3]));
+      const kadaiVal = parts[4] === '' ? null : (isNaN(parseFloat(parts[4])) ? null : parseFloat(parts[4]));
+      parsed.push({ from: from, to: to, broiler: broilerVal, country: countryVal, kadai: kadaiVal });
+    }
+    if (parsed.length) {
+      // sort by from date
+      parsed.sort((a,b) => a.from.localeCompare(b.from));
+      currentOverrides = parsed;
+      saveOverrides();
+      renderOverrides();
+      statusEl.textContent = `Imported ${parsed.length} override(s).`;
+      statusEl.className = 'status ok';
+      if (currentRows.length) buildInvoice();
+    } else {
+      statusEl.textContent = 'No valid override rows found in CSV.';
+      statusEl.className = 'status err';
+    }
+  };
+  reader.readAsText(file);
+  // clear input so same file can be re-selected later
+  e.target.value = '';
+});
+
+function getRatesForDate(dateIso) {
+  if (!dateIso) return null;
+  for (const ov of currentOverrides) {
+    if (!ov.from || !ov.to) continue;
+    if (ov.from <= dateIso && dateIso <= ov.to) {
+      // return the override as-is (may contain nulls for fields that should inherit)
+      return { broiler: (ov.broiler == null ? null : ov.broiler), country: (ov.country == null ? null : ov.country), kadai: (ov.kadai == null ? null : ov.kadai) };
+    }
+  }
+  return null;
+}
+
+function computeInvoiceRows(rows, groups, rates, overrides) {
   return rows.map(r => {
     let broilerQty = 0, countryQty = 0, kadaiQty = 0;
     PRODUCTS.forEach(p => {
@@ -806,14 +1005,21 @@ function computeInvoiceRows(rows, groups, rates) {
       else if (g === "country") countryQty += val;
       else if (g === "kadai") kadaiQty += val;
     });
-    const broilerAmt = broilerQty * rates.broiler;
-    const countryAmt = countryQty * rates.country;
-    const kadaiAmt = kadaiQty * rates.kadai;
+    const overrideRates = getRatesForDate(r.Date);
+    const useRates = {
+      broiler: (overrideRates && overrideRates.broiler != null) ? overrideRates.broiler : rates.broiler,
+      country: (overrideRates && overrideRates.country != null) ? overrideRates.country : rates.country,
+      kadai: (overrideRates && overrideRates.kadai != null) ? overrideRates.kadai : rates.kadai
+    };
+    const broilerAmt = broilerQty * (useRates.broiler || 0);
+    const countryAmt = countryQty * (useRates.country || 0);
+    const kadaiAmt = kadaiQty * (useRates.kadai || 0);
     return {
       Date: r.Date, Slot: r.Slot,
       broilerQty, broilerAmt, countryQty, countryAmt,
       rowTotal: broilerAmt + countryAmt,
-      kadaiQty, kadaiAmt
+      kadaiQty, kadaiAmt,
+      appliedRates: useRates
     };
   });
 }
@@ -843,7 +1049,7 @@ function buildInvoice() {
   const filtered = currentRows.filter(r =>
     (!dateFrom || r.Date >= dateFrom) && (!dateTo || r.Date <= dateTo)
   );
-  currentInvoiceRows = computeInvoiceRows(filtered, currentGroups, currentRates);
+  currentInvoiceRows = computeInvoiceRows(filtered, currentGroups, currentRates, currentOverrides);
   renderInvoiceTables();
 }
 
@@ -864,20 +1070,24 @@ function renderInvoiceTables() {
     invoiceBody.innerHTML = `<tr><td colspan="8" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
     kadaiBody.innerHTML = `<tr><td colspan="4" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
   } else {
-    invoiceBody.innerHTML = currentInvoiceRows.map(r => `
+    invoiceBody.innerHTML = currentInvoiceRows.map(r => {
+      const ar = r.appliedRates || currentRates;
+      return `
       <tr>
         <td>${r.Date}</td>
-        <td>${fmt(r.broilerQty)}</td><td>${fmt(currentRates.broiler)}</td><td>${fmt(r.broilerAmt)}</td>
-        <td>${fmt(r.countryQty)}</td><td>${fmt(currentRates.country)}</td><td>${fmt(r.countryAmt)}</td>
+        <td>${fmt(r.broilerQty)}</td><td>${fmt(ar.broiler)}</td><td>${fmt(r.broilerAmt)}</td>
+        <td>${fmt(r.countryQty)}</td><td>${fmt(ar.country)}</td><td>${fmt(r.countryAmt)}</td>
         <td class="total">${fmt(r.rowTotal)}</td>
-      </tr>`).join("");
+      </tr>`}).join("");
 
     const kadaiRowsFiltered = currentInvoiceRows.filter(r => r.kadaiQty > 0);
-    kadaiBody.innerHTML = (kadaiRowsFiltered.length ? kadaiRowsFiltered : currentInvoiceRows).map(r => `
+    kadaiBody.innerHTML = (kadaiRowsFiltered.length ? kadaiRowsFiltered : currentInvoiceRows).map(r => {
+      const ar = r.appliedRates || currentRates;
+      return `
       <tr>
         <td>${r.Date}</td>
-        <td>${fmt(r.kadaiQty)}</td><td>${fmt(currentRates.kadai)}</td><td>${fmt(r.kadaiAmt)}</td>
-      </tr>`).join("");
+        <td>${fmt(r.kadaiQty)}</td><td>${fmt(ar.kadai)}</td><td>${fmt(r.kadaiAmt)}</td>
+      </tr>`}).join("");
   }
 
   const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
@@ -917,6 +1127,7 @@ function hideInvoice() {
 
 document.getElementById("invoiceBtn").addEventListener("click", () => {
   renderGroupConfig();
+  renderOverrides();
   ensureDateDefaults();
   buildInvoice();
   document.getElementById("invoiceConfigPanel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -953,13 +1164,15 @@ document.getElementById("advanceInput").addEventListener("input", updateGrandTot
   if (lines.length) lines.push("");
   lines.push("Date,B.Chicken kg,Rate,Amount,C.Chicken kg,Rate,Amount,Row Total");
   currentInvoiceRows.forEach(r => {
-    lines.push([r.Date, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
-      fmt(r.countryQty), fmt(currentRates.country), fmt(r.countryAmt), fmt(r.rowTotal)].join(","));
+    const ar = r.appliedRates || currentRates;
+    lines.push([r.Date, fmt(r.broilerQty), fmt(ar.broiler), fmt(r.broilerAmt),
+      fmt(r.countryQty), fmt(ar.country), fmt(r.countryAmt), fmt(r.rowTotal)].join(","));
   });
   lines.push("");
   lines.push("Date,Kadai Qty,Rate,Amount");
   currentInvoiceRows.forEach(r => {
-    lines.push([r.Date, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)].join(","));
+    const ar = r.appliedRates || currentRates;
+    lines.push([r.Date, fmt(r.kadaiQty), fmt(ar.kadai), fmt(r.kadaiAmt)].join(","));
   });
   const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
   const kadaiTotal = currentInvoiceRows.reduce((s, r) => s + r.kadaiAmt, 0);
@@ -1004,10 +1217,11 @@ document.getElementById("downloadPdfBtn").addEventListener("click", () => {
   doc.autoTable({
     startY: y + 2,
     head: [["Date", "B.Chicken kg", "Rate", "Amount", "C.Chicken kg", "Rate", "Amount", "Total"]],
-    body: currentInvoiceRows.map(r => [
-      r.Date, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
-      fmt(r.countryQty), fmt(currentRates.country), fmt(r.countryAmt), fmt(r.rowTotal)
-    ]),
+    body: currentInvoiceRows.map(r => {
+      const ar = r.appliedRates || currentRates;
+      return [r.Date, fmt(r.broilerQty), fmt(ar.broiler), fmt(r.broilerAmt),
+        fmt(r.countryQty), fmt(ar.country), fmt(r.countryAmt), fmt(r.rowTotal)];
+    }),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [193, 68, 14] }
   });
@@ -1020,9 +1234,10 @@ document.getElementById("downloadPdfBtn").addEventListener("click", () => {
   doc.autoTable({
     startY: y2,
     head: [["Date", "Qty", "Rate", "Amount"]],
-    body: (kadaiRows.length ? kadaiRows : currentInvoiceRows).map(r => [
-      r.Date, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)
-    ]),
+    body: (kadaiRows.length ? kadaiRows : currentInvoiceRows).map(r => {
+      const ar = r.appliedRates || currentRates;
+      return [r.Date, fmt(r.kadaiQty), fmt(ar.kadai), fmt(r.kadaiAmt)];
+    }),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [227, 160, 8] }
   });
@@ -1045,6 +1260,8 @@ document.getElementById("downloadPdfBtn").addEventListener("click", () => {
   doc.save(`balaji_invoice_${today}.pdf`);
 });
 
+renderGroupConfig();
+renderOverrides();
 renderTable([]);
 </script>
 </body>
