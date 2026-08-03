@@ -244,6 +244,7 @@
     border-radius: 4px;
   }
   .cell-input:focus { background: #FBF0DD; outline: 1px solid var(--turmeric); }
+  .cell-input.edited { background: #FCEBD9; box-shadow: inset 0 0 0 1px var(--turmeric); }
 
   .rates-row {
     display: flex;
@@ -344,6 +345,7 @@ country chicken"></textarea>
       <label class="file-btn" for="fileInput">⤒ Load .txt file</label>
       <input type="file" id="fileInput" accept=".txt">
       <button class="btn-ghost" id="clearBtn">Clear</button>
+      <button class="btn-ghost" id="resetEditsBtn" title="Discard manual corrections and re-derive every quantity from the log">Reset edits</button>
       <span class="status" id="status"></span>
     </div>
   </div>
@@ -447,7 +449,7 @@ country chicken"></textarea>
     <button class="btn-ghost" id="printBtn" style="display:none;">Print invoice</button>
   </div>
 
-  <footer class="no-print">Quantity parsing handles whole numbers, "half", "2 half", and Tamil-style "1½" written as 11/2, 21/2, etc.</footer>
+  <footer class="no-print">Quantity parsing handles whole numbers, "half", "2 half", and Tamil-style "1½" written as 11/2, 21/2, etc. Your log, edits, rates and overrides are saved automatically and restored next time you open this page.</footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -616,6 +618,29 @@ function groupOrders(orders) {
   return rows;
 }
 
+// ---------- manual-edit overlay ----------
+// Manual corrections are keyed by "Date|Slot|product" so that re-parsing the
+// log (e.g. after pasting more messages) never silently discards a
+// correction the user already made to an existing date/slot.
+let manualEdits = {};
+
+function editKey(date, slot, product) {
+  return `${date}|${slot}|${product}`;
+}
+
+function applyManualEdits(rows) {
+  rows.forEach(r => {
+    PRODUCTS.forEach(p => {
+      const key = editKey(r.Date, r.Slot, p);
+      if (Object.prototype.hasOwnProperty.call(manualEdits, key)) {
+        r[p] = manualEdits[key];
+      }
+    });
+    recomputeTotal(r);
+  });
+  return rows;
+}
+
 // ---------- rendering ----------
 function fmt(n) {
   if (n === 0) return "0";
@@ -659,7 +684,8 @@ function renderTable(rows) {
       }
       const val = r[c];
       const cls = val === 0 ? "zero" : "";
-      return `<td class="${cls}"><input type="number" step="0.1" class="cell-input" data-idx="${idx}" data-product="${c}" value="${fmt(val)}"></td>`;
+      const isEdited = Object.prototype.hasOwnProperty.call(manualEdits, editKey(r.Date, r.Slot, c));
+      return `<td class="${cls}"><input type="number" step="0.1" class="cell-input${isEdited ? " edited" : ""}" data-idx="${idx}" data-product="${c}" value="${fmt(val)}" title="${isEdited ? "Manually corrected — kept when you re-parse" : ""}"></td>`;
     }).join("") + "</tr>";
   }).join("");
 
@@ -688,6 +714,85 @@ function toCsv(rows) {
   return lines.join("\n");
 }
 
+// ---------- persistence (survives reloads / new sessions) ----------
+const STORAGE_KEY = "balaji_order_parser_state";
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 400);
+}
+
+async function saveState() {
+  try {
+    const state = {
+      rawInput: document.getElementById("rawInput").value,
+      currentRows,
+      manualEdits,
+      rates: {
+        broiler: document.getElementById("rateBroiler").value,
+        country: document.getElementById("rateCountry").value,
+        kadai: document.getElementById("rateKadai").value
+      },
+      groups: currentGroups,
+      overrides: currentOverrides,
+      billTo: document.getElementById("billToInput").value,
+      dateFrom: document.getElementById("dateFromInput").value,
+      dateTo: document.getElementById("dateToInput").value,
+      advance: document.getElementById("advanceInput").value,
+      invoiceBuilt: document.getElementById("invoiceSection").style.display === "block"
+    };
+    await window.storage.set(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error("Save failed:", e);
+  }
+}
+
+async function clearSavedState() {
+  try { await window.storage.delete(STORAGE_KEY); } catch (e) { /* nothing saved yet */ }
+}
+
+async function loadState() {
+  let state = null;
+  try {
+    const res = await window.storage.get(STORAGE_KEY);
+    if (res && res.value) state = JSON.parse(res.value);
+  } catch (e) {
+    return; // nothing saved yet, or read failed — start fresh
+  }
+  if (!state) return;
+
+  if (state.rawInput) document.getElementById("rawInput").value = state.rawInput;
+  if (state.manualEdits) manualEdits = state.manualEdits;
+  if (Array.isArray(state.currentRows) && state.currentRows.length) {
+    currentRows = state.currentRows;
+    renderTable(currentRows);
+  }
+  if (state.rates) {
+    if (state.rates.broiler !== undefined) document.getElementById("rateBroiler").value = state.rates.broiler;
+    if (state.rates.country !== undefined) document.getElementById("rateCountry").value = state.rates.country;
+    if (state.rates.kadai !== undefined) document.getElementById("rateKadai").value = state.rates.kadai;
+  }
+  if (state.groups) currentGroups = Object.assign({}, DEFAULT_GROUPS, state.groups);
+  if (Array.isArray(state.overrides)) currentOverrides = state.overrides;
+  if (state.billTo) document.getElementById("billToInput").value = state.billTo;
+  if (state.dateFrom) document.getElementById("dateFromInput").value = state.dateFrom;
+  if (state.dateTo) document.getElementById("dateToInput").value = state.dateTo;
+  if (state.advance !== undefined) document.getElementById("advanceInput").value = state.advance;
+
+  renderGroupConfig();
+  renderOverrides();
+
+  if (state.invoiceBuilt && currentRows.length) {
+    ensureDateDefaults();
+    buildInvoice();
+  }
+
+  if (currentRows.length) {
+    statusEl.textContent = "Restored your previous session.";
+    statusEl.className = "status ok";
+  }
+}
+
 // ---------- wiring ----------
 let currentRows = [];
 const statusEl = document.getElementById("status");
@@ -705,12 +810,18 @@ function runParse() {
     statusEl.className = "status err";
     currentRows = [];
     renderTable(currentRows);
+    scheduleSave();
     return;
   }
-  currentRows = groupOrders(orders);
+  // Re-parsing never wipes out corrections you already made to an existing
+  // date/slot — those are re-applied on top of the freshly parsed values.
+  currentRows = applyManualEdits(groupOrders(orders));
   renderTable(currentRows);
-  statusEl.textContent = `Parsed ${orders.length} order message${orders.length === 1 ? "" : "s"}.`;
+  const editCount = Object.keys(manualEdits).length;
+  statusEl.textContent = `Parsed ${orders.length} order message${orders.length === 1 ? "" : "s"}.` +
+    (editCount ? ` ${editCount} manual correction${editCount === 1 ? "" : "s"} kept.` : "");
   statusEl.className = "status ok";
+  scheduleSave();
 }
 
 document.getElementById("parseBtn").addEventListener("click", runParse);
@@ -718,24 +829,53 @@ document.getElementById("parseBtn").addEventListener("click", runParse);
 document.getElementById("clearBtn").addEventListener("click", () => {
   document.getElementById("rawInput").value = "";
   currentRows = [];
+  manualEdits = {};
   renderTable(currentRows);
   statusEl.textContent = "";
   statusEl.className = "status";
   document.getElementById("invoiceBtn").disabled = true;
   hideInvoice();
+  clearSavedState();
 });
 
-// live-edit: keep Total in sync as quantities are corrected
+document.getElementById("resetEditsBtn").addEventListener("click", () => {
+  if (!Object.keys(manualEdits).length) {
+    statusEl.textContent = "No manual edits to reset.";
+    statusEl.className = "status";
+    return;
+  }
+  manualEdits = {};
+  if (currentRows.length) {
+    // recompute straight from the raw log, discarding corrections
+    const raw = document.getElementById("rawInput").value;
+    const orders = extractOrders(raw);
+    currentRows = groupOrders(orders);
+    renderTable(currentRows);
+    if (document.getElementById("invoiceSection").style.display === "block") buildInvoice();
+  }
+  statusEl.textContent = "Manual edits reset — quantities re-derived from the log.";
+  statusEl.className = "status ok";
+  scheduleSave();
+});
+
+// live-edit: keep Total in sync as quantities are corrected, and remember
+// the correction so future re-parses don't overwrite it.
 document.getElementById("bodyRows").addEventListener("input", (e) => {
   const t = e.target;
   if (!t.classList.contains("cell-input")) return;
   const idx = parseInt(t.dataset.idx, 10);
   const product = t.dataset.product;
   const val = parseFloat(t.value);
-  currentRows[idx][product] = isNaN(val) ? 0 : val;
+  const finalVal = isNaN(val) ? 0 : val;
+  currentRows[idx][product] = finalVal;
+  const row = currentRows[idx];
+  manualEdits[editKey(row.Date, row.Slot, product)] = finalVal;
+  t.classList.add("edited");
+  t.title = "Manually corrected — kept when you re-parse";
   recomputeTotal(currentRows[idx]);
   const totalCell = document.querySelector(`[data-total-idx="${idx}"]`);
   if (totalCell) totalCell.textContent = fmt(currentRows[idx].Total);
+  scheduleSave();
 });
 
 document.getElementById("fileInput").addEventListener("change", (e) => {
@@ -746,9 +886,12 @@ document.getElementById("fileInput").addEventListener("change", (e) => {
     document.getElementById("rawInput").value = evt.target.result;
     statusEl.textContent = `Loaded ${file.name}.`;
     statusEl.className = "status ok";
+    scheduleSave();
   };
   reader.readAsText(file);
 });
+
+document.getElementById("rawInput").addEventListener("input", scheduleSave);
 
 document.getElementById("downloadBtn").addEventListener("click", () => {
   if (!currentRows.length) return;
@@ -808,41 +951,11 @@ document.getElementById("groupBody").addEventListener("change", (e) => {
   if (!t.classList.contains("group-select")) return;
   currentGroups[t.dataset.product] = t.value;
   if (currentRows.length) buildInvoice();
+  scheduleSave();
 });
 
 // ---------- date-specific rate overrides ----------
 let currentOverrides = [];
-
-function saveOverrides() {
-  try {
-    // normalize entries: ensure dates and numbers, set single-date 'to' when empty
-    currentOverrides = (currentOverrides || []).map(o => {
-      const from = (o.from || '').trim();
-      const to = (o.to || '').trim() || from;
-      const broilerRaw = o.broiler;
-      const countryRaw = o.country;
-      const kadaiRaw = o.kadai;
-      const broiler = (broilerRaw === null || broilerRaw === undefined || broilerRaw === '') ? null : (Number.isFinite(+broilerRaw) ? (+broilerRaw) : null);
-      const country = (countryRaw === null || countryRaw === undefined || countryRaw === '') ? null : (Number.isFinite(+countryRaw) ? (+countryRaw) : null);
-      const kadai = (kadaiRaw === null || kadaiRaw === undefined || kadaiRaw === '') ? null : (Number.isFinite(+kadaiRaw) ? (+kadaiRaw) : null);
-      return { from: from, to: to, broiler: broiler, country: country, kadai: kadai };
-    }).filter(o => o.from);
-    localStorage.setItem('balaji_overrides', JSON.stringify(currentOverrides || []));
-  } catch (e) { /* ignore */ }
-}
-
-function loadOverrides() {
-  try {
-    const raw = localStorage.getItem('balaji_overrides');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) currentOverrides = parsed;
-    }
-  } catch (e) { /* ignore */ }
-}
-
-// load persisted overrides on script start
-loadOverrides();
 
 function renderOverrides() {
   const body = document.getElementById("overridesBody");
@@ -896,7 +1009,7 @@ function renderOverrides() {
         const v = e.target.value.trim(); row.kadai = v === '' ? null : (isNaN(parseFloat(v)) ? null : parseFloat(v));
       }
       currentOverrides[i] = row;
-      saveOverrides();
+      scheduleSave();
       if (currentRows.length) buildInvoice();
     });
   });
@@ -905,7 +1018,7 @@ function renderOverrides() {
       const i = parseInt(e.target.dataset.idx, 10);
       currentOverrides.splice(i, 1);
       renderOverrides();
-      saveOverrides();
+      scheduleSave();
       if (currentRows.length) buildInvoice();
     });
   });
@@ -915,7 +1028,7 @@ document.getElementById('addOverrideBtn').addEventListener('click', (e) => {
   e.preventDefault();
   currentOverrides.push({ from: '', to: '', broiler: null, country: null, kadai: null });
   renderOverrides();
-  saveOverrides();
+  scheduleSave();
 });
 
 document.getElementById('exportOverridesBtn').addEventListener('click', (e) => {
@@ -968,7 +1081,7 @@ document.getElementById('importOverridesFile').addEventListener('change', (e) =>
       // sort by from date
       parsed.sort((a,b) => a.from.localeCompare(b.from));
       currentOverrides = parsed;
-      saveOverrides();
+      scheduleSave();
       renderOverrides();
       statusEl.textContent = `Imported ${parsed.length} override(s).`;
       statusEl.className = 'status ok';
@@ -1104,6 +1217,7 @@ function renderInvoiceTables() {
   document.getElementById("invoiceCsvBtn").style.display = "inline-block";
   document.getElementById("printBtn").style.display = "inline-block";
   document.getElementById("downloadPdfBtn").style.display = "inline-block";
+  scheduleSave();
 }
 
 function updateGrandTotal() {
@@ -1136,6 +1250,7 @@ document.getElementById("invoiceBtn").addEventListener("click", () => {
 ["rateBroiler", "rateCountry", "rateKadai", "dateFromInput", "dateToInput"].forEach(id => {
   document.getElementById(id).addEventListener("input", () => {
     if (currentRows.length) buildInvoice();
+    scheduleSave();
   });
 });
 document.getElementById("billToInput").addEventListener("input", () => {
@@ -1149,9 +1264,13 @@ document.getElementById("billToInput").addEventListener("input", () => {
     document.getElementById("invoiceMeta").innerHTML = metaParts.join(" &nbsp; ");
     document.getElementById("kadaiMeta").innerHTML = "";
   }
+  scheduleSave();
 });
 
-document.getElementById("advanceInput").addEventListener("input", updateGrandTotal);
+document.getElementById("advanceInput").addEventListener("input", () => {
+  updateGrandTotal();
+  scheduleSave();
+});
 
   document.getElementById("invoiceCsvBtn").addEventListener("click", () => {
   if (!currentInvoiceRows.length) return;
@@ -1263,6 +1382,7 @@ document.getElementById("downloadPdfBtn").addEventListener("click", () => {
 renderGroupConfig();
 renderOverrides();
 renderTable([]);
+loadState();
 </script>
 </body>
 </html>
