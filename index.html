@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balaji Hotel — Order Parser</title>
+<style>
+  :root {
+    --cream: #FBF6EE;
+    --paper: #FFFDF9;
+    --ink: #2B1B12;
+    --ink-soft: #6B5545;
+    --chili: #C1440E;
+    --chili-dark: #9C360A;
+    --turmeric: #E3A008;
+    --line: #E2D3BE;
+    --line-strong: #C9B79E;
+    --good: #4C7A4A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--cream);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(43,27,18,0.05) 1px, transparent 0);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+  }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--chili);
+    font-weight: 600;
+  }
+
+  h1 {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-weight: 700;
+    font-size: 40px;
+    margin: 4px 0 2px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  .sub {
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    margin-bottom: 30px;
+    max-width: 60ch;
+    line-height: 1.5;
+  }
+
+  .panel {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 0 rgba(43,27,18,0.03);
+  }
+
+  .panel h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+    font-weight: 700;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 220px;
+    resize: vertical;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink);
+    background: #fffefb;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--chili); }
+  textarea::placeholder { color: #B7A794; }
+
+  .row {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  button, .file-btn {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 11px 22px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.08s ease, box-shadow 0.15s ease;
+  }
+  button:active, .file-btn:active { transform: scale(0.97); }
+
+  .btn-primary {
+    background: var(--chili);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--chili-dark); }
+  .btn-primary:disabled { background: #D8A98F; cursor: not-allowed; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--line-strong);
+  }
+  .btn-ghost:hover { border-color: var(--chili); color: var(--chili); }
+
+  .file-btn {
+    background: var(--cream);
+    color: var(--ink);
+    border: 1px dashed var(--line-strong);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .file-btn:hover { border-color: var(--turmeric); }
+  input[type="file"] { display: none; }
+
+  .status {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-left: auto;
+  }
+  .status.ok { color: var(--good); }
+  .status.err { color: var(--chili-dark); }
+
+  /* Receipt-style results */
+  .receipt {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px 14px 0 0;
+    padding: 26px 24px 20px;
+    position: relative;
+  }
+  .receipt-tear {
+    height: 14px;
+    background:
+      linear-gradient(-45deg, var(--cream) 6px, transparent 0),
+      linear-gradient(45deg, var(--cream) 6px, transparent 0);
+    background-size: 16px 16px;
+    background-position: bottom;
+    background-repeat: repeat-x;
+    background-color: var(--paper);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+
+  .receipt-title {
+    font-family: Georgia, serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .receipt-meta { font-size: 12px; color: var(--ink-soft); margin-bottom: 18px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    text-align: right;
+    padding: 8px 6px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    border-bottom: 2px solid var(--ink);
+    white-space: nowrap;
+  }
+  thead th:first-child, thead th:nth-child(2) { text-align: left; }
+  tbody td {
+    padding: 9px 6px;
+    text-align: right;
+    border-bottom: 1px dashed var(--line);
+    font-variant-numeric: tabular-nums;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    white-space: nowrap;
+  }
+  tbody td:first-child, tbody td:nth-child(2) { text-align: left; font-family: inherit; }
+  tbody td.zero { color: #C9BBA9; }
+  tbody td.total { font-weight: 700; color: var(--chili-dark); }
+  tbody tr:hover td { background: #FBF3E7; }
+
+  .empty {
+    text-align: center;
+    padding: 40px 10px;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  .cell-input {
+    width: 60px;
+    border: none;
+    background: transparent;
+    text-align: right;
+    font: inherit;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    color: var(--ink);
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .cell-input:focus { background: #FBF0DD; outline: 1px solid var(--turmeric); }
+
+  .rates-row {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .rates-row label {
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rates-row input {
+    width: 70px;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font: inherit;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    color: var(--ink);
+  }
+  .rates-row input:focus { border-color: var(--chili); outline: none; }
+
+  #groupTable td, #groupTable th { text-align: left; }
+  #groupTable select {
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: #fffefb;
+    color: var(--ink);
+  }
+
+  .grand-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: 14px;
+  }
+  .grand-row:last-child { border-bottom: none; }
+  .grand-row input {
+    width: 110px;
+    text-align: right;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font: inherit;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+  }
+  .grand-final {
+    font-weight: 700;
+    font-size: 17px;
+    color: var(--chili-dark);
+    padding-top: 14px;
+  }
+
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff; padding: 10px; }
+    .panel, .receipt { box-shadow: none; }
+  }
+
+  footer {
+    text-align: center;
+    font-size: 12px;
+    color: #B7A794;
+    margin-top: 30px;
+  }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 30px; }
+    .panel, .receipt { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="no-print">
+    <div class="eyebrow">Balaji Hotel</div>
+  </header>
+  <h1 class="no-print">Order Parser</h1>
+  <p class="sub no-print">Paste the raw WhatsApp order log below, or load a .txt export. It'll pull out the quantity and item from every line, match it to the menu, and tally each AM/PM slot into a clean table you can export.</p>
+
+  <div class="panel no-print">
+    <h2>Order log</h2>
+    <textarea id="rawInput" placeholder="[7:45 AM, 03/08/2026] Balaji Hotel: leg 2
+wings 1/2 kg
+kadai 1
+country chicken"></textarea>
+    <div class="row">
+      <button class="btn-primary" id="parseBtn">Parse orders</button>
+      <label class="file-btn" for="fileInput">⤒ Load .txt file</label>
+      <input type="file" id="fileInput" accept=".txt">
+      <button class="btn-ghost" id="clearBtn">Clear</button>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+
+  <div class="receipt">
+    <div class="receipt-title">Summary — by date &amp; slot</div>
+    <div class="receipt-meta" id="metaLine">No orders parsed yet. <span style="opacity:0.8;">Once parsed, click any quantity to correct it before invoicing.</span></div>
+    <div class="table-scroll">
+      <table id="resultsTable" style="display:none;">
+        <thead>
+          <tr id="headRow"></tr>
+        </thead>
+        <tbody id="bodyRows"></tbody>
+      </table>
+      <div class="empty" id="emptyState">Your parsed orders will show up here, receipt-style.</div>
+    </div>
+  </div>
+  <div class="receipt-tear"></div>
+
+  <div class="row no-print" style="margin-top:24px; justify-content:center;">
+    <button class="btn-primary" id="downloadBtn" disabled>Download CSV</button>
+    <button class="btn-primary" id="invoiceBtn" disabled>Generate invoice ▸</button>
+  </div>
+
+  <div class="panel no-print" id="invoiceConfigPanel" style="display:none;">
+    <h2>Invoice details</h2>
+    <div class="rates-row">
+      <label>Invoice to <input type="text" id="billToInput" placeholder="Customer name" style="width:180px;"></label>
+      <label>From <input type="date" id="dateFromInput"></label>
+      <label>To <input type="date" id="dateToInput"></label>
+    </div>
+    <h2>Grouping &amp; rates</h2>
+    <div class="rates-row">
+      <label>Broiler chicken <input type="number" id="rateBroiler" value="265"> ₹ / kg</label>
+      <label>Country chicken <input type="number" id="rateCountry" value="300"> ₹ / kg</label>
+      <label>Kadai <input type="number" id="rateKadai" value="60"> ₹ / piece</label>
+    </div>
+    <div class="table-scroll">
+      <table id="groupTable">
+        <thead><tr><th>Menu item</th><th>Goes under</th></tr></thead>
+        <tbody id="groupBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="receipt" id="invoiceSection" style="display:none;">
+    <div class="receipt-title">Invoice</div>
+    <div class="receipt-meta" id="invoiceMeta">Broiler &amp; country chicken, priced per kg.</div>
+    <div class="table-scroll">
+      <table id="invoiceTable">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Date</th><th style="text-align:left;">Slot</th>
+            <th>B.Chicken</th><th>Rate</th><th>Amount</th>
+            <th>C.Chicken</th><th>Rate</th><th>Amount</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody id="invoiceBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="receipt-tear"></div>
+
+  <div class="receipt" id="kadaiSection" style="display:none;">
+    <div class="receipt-title">Kadai</div>
+    <div class="receipt-meta" id="kadaiMeta">Priced per piece — kept as its own receipt, separate from the kg-rate items.</div>
+    <div class="table-scroll">
+      <table id="kadaiTable">
+        <thead><tr><th style="text-align:left;">Date</th><th style="text-align:left;">Slot</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+        <tbody id="kadaiBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="receipt-tear"></div>
+
+  <div class="panel" id="grandTotalPanel" style="display:none;">
+    <div class="grand-row"><span>Invoice total</span><span id="invoiceTotalDisplay">₹0</span></div>
+    <div class="grand-row"><span>Kadai total</span><span id="kadaiTotalDisplay">₹0</span></div>
+    <div class="grand-row"><label for="advanceInput">Advance paid</label><input type="number" id="advanceInput" value="0"></div>
+    <div class="grand-row grand-final"><span>Grand total due</span><span id="grandTotalDisplay">₹0</span></div>
+  </div>
+
+  <div class="row no-print" id="invoiceActionsRow" style="justify-content:center; display:none;">
+    <button class="btn-primary" id="downloadPdfBtn" style="display:none;">Download PDF</button>
+    <button class="btn-ghost" id="invoiceCsvBtn" style="display:none;">Download invoice CSV</button>
+    <button class="btn-ghost" id="printBtn" style="display:none;">Print invoice</button>
+  </div>
+
+  <footer class="no-print">Quantity parsing handles whole numbers, "half", "2 half", and Tamil-style "1½" written as 11/2, 21/2, etc.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+<script>
+const PRODUCTS = [
+  "leg", "chest softa", "chest for chilli", "wings",
+  "kadai", "country chicken", "kudal", "lollipop",
+  "chops", "bone chilli"
+];
+
+// ---------- quantity parsing ----------
+function parseQuantity(qtyStrRaw) {
+  const qtyStr = (qtyStrRaw || "").trim().toLowerCase();
+  if (!qtyStr) return 0;
+
+  if (qtyStr.includes("half")) return 0.5;
+
+  // Tamil-style "11/2" -> 1.5, "21/2" -> 2.5
+  if (/^\d+1\/2$/.test(qtyStr)) {
+    const whole = parseInt(qtyStr.slice(0, -3), 10);
+    return isNaN(whole) ? 0 : whole + 0.5;
+  }
+
+  if (qtyStr.includes("/")) {
+    const parts = qtyStr.split("/");
+    const num = parseFloat(parts[0]);
+    const den = parseFloat(parts[1]);
+    if (isNaN(num) || isNaN(den) || den === 0) return 0;
+    return num / den;
+  }
+
+  const val = parseFloat(qtyStr);
+  return isNaN(val) ? 0 : val;
+}
+
+// ---------- item / quantity split ----------
+function extractQtyAndItem(lineRaw) {
+  const line = (lineRaw || "").toLowerCase().trim();
+
+  let m = line.match(/^([0-9/]+|half|[\d.]+)\s*(kg)?\s*(.*)$/);
+  if (m) {
+    return [parseQuantity(m[1]), (m[3] || "").trim()];
+  }
+
+  m = line.match(/^(.*?)([0-9/]+|half|[\d.]+)\s*kg$/);
+  if (m) {
+    return [parseQuantity(m[2]), (m[1] || "").trim()];
+  }
+
+  return [null, null];
+}
+
+// ---------- fuzzy product matching (difflib-style ratio) ----------
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+function similarity(a, b) {
+  const maxLen = Math.max(a.length, b.length, 1);
+  return 1 - levenshtein(a, b) / maxLen;
+}
+function matchProduct(rawLine) {
+  const lower = (rawLine || "").toLowerCase();
+  for (const product of PRODUCTS) {
+    if (lower.includes(product)) return product;
+  }
+  let best = null, bestScore = 0;
+  for (const product of PRODUCTS) {
+    const score = similarity(lower, product);
+    if (score > bestScore) { bestScore = score; best = product; }
+  }
+  return bestScore >= 0.6 ? best : null;
+}
+
+// ---------- order extraction ----------
+function extractOrders(rawText) {
+  const pattern = /\[(\d{1,2}:\d{2}\s*[APMapm]{2}),\s*(\d{1,2}\/\d{1,2}\/\d{4})\]\s*Balaji Hotel:([\s\S]*?)(?=\[\d{1,2}:\d{2}\s*[APMapm]{2},\s*\d{1,2}\/\d{1,2}\/\d{4}\]|$)/g;
+
+  const orders = [];
+  let match;
+  while ((match = pattern.exec(rawText)) !== null) {
+    const [, timeStr, dateStr, itemsRaw] = match;
+
+    const dateParts = dateStr.trim().split("/");
+    if (dateParts.length !== 3) continue;
+    const dd = parseInt(dateParts[0], 10);
+    const mm = parseInt(dateParts[1], 10);
+    const yyyy = parseInt(dateParts[2], 10);
+    if (!dd || !mm || !yyyy) continue;
+    // Roll overflowing days into the next month (e.g. 31 June -> 1 July)
+    const dateObj = new Date(yyyy, mm - 1, dd);
+    const dateIso = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
+    const slot = timeStr.trim().slice(-2).toUpperCase();
+
+    const order = {};
+    PRODUCTS.forEach(p => order[p] = 0);
+    order.Date = dateIso;
+    order.Slot = slot;
+
+    const lines = itemsRaw.trim().split("\n").filter(l => l.trim().length);
+    for (const line of lines) {
+      const [qty, item] = extractQtyAndItem(line);
+      if (qty !== null && item) {
+        const product = matchProduct(item);
+        if (product) order[product] += qty;
+      }
+    }
+
+    if (itemsRaw.toLowerCase().includes("country chicken")) {
+      const mentioned = lines.some(l => l.toLowerCase().includes("country chicken"));
+      const alreadyCounted = order["country chicken"] > 0;
+      if (mentioned && !alreadyCounted) order["country chicken"] = 1.0;
+    }
+
+    orders.push(order);
+  }
+  return orders;
+}
+
+// ---------- group by Date + Slot, sum numeric fields ----------
+function groupOrders(orders) {
+  const groups = new Map();
+  for (const order of orders) {
+    const key = order.Date + "|" + order.Slot;
+    if (!groups.has(key)) {
+      const base = { Date: order.Date, Slot: order.Slot };
+      PRODUCTS.forEach(p => base[p] = 0);
+      groups.set(key, base);
+    }
+    const g = groups.get(key);
+    PRODUCTS.forEach(p => g[p] += order[p]);
+  }
+  const rows = Array.from(groups.values());
+  rows.sort((a, b) => a.Date.localeCompare(b.Date) || a.Slot.localeCompare(b.Slot));
+  rows.forEach(r => {
+    r.Total = r["leg"] + r["wings"] + r["lollipop"] + r["chops"] + r["bone chilli"]
+      + 0.8 * (r["chest softa"] + r["chest for chilli"]);
+  });
+  return rows;
+}
+
+// ---------- rendering ----------
+function fmt(n) {
+  if (n === 0) return "0";
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function renderTable(rows) {
+  const table = document.getElementById("resultsTable");
+  const emptyState = document.getElementById("emptyState");
+  const headRow = document.getElementById("headRow");
+  const bodyRows = document.getElementById("bodyRows");
+  const meta = document.getElementById("metaLine");
+  const downloadBtn = document.getElementById("downloadBtn");
+
+  if (!rows.length) {
+    table.style.display = "none";
+    emptyState.style.display = "block";
+    meta.textContent = "No orders parsed yet.";
+    downloadBtn.disabled = true;
+    return;
+  }
+
+  const columns = ["Date", "Slot", ...PRODUCTS, "Total"];
+  headRow.innerHTML = columns.map(c => `<th>${c}</th>`).join("");
+
+  bodyRows.innerHTML = rows.map((r, idx) => {
+    return "<tr>" + columns.map(c => {
+      if (c === "Date" || c === "Slot") return `<td>${r[c]}</td>`;
+      if (c === "Total") {
+        return `<td class="total" data-total-idx="${idx}">${fmt(r.Total)}</td>`;
+      }
+      const val = r[c];
+      const cls = val === 0 ? "zero" : "";
+      return `<td class="${cls}"><input type="number" step="0.1" class="cell-input" data-idx="${idx}" data-product="${c}" value="${fmt(val)}"></td>`;
+    }).join("") + "</tr>";
+  }).join("");
+
+  table.style.display = "table";
+  emptyState.style.display = "none";
+  meta.textContent = `${rows.length} date/slot group${rows.length === 1 ? "" : "s"} parsed. Edit any quantity, then generate the invoice.`;
+  downloadBtn.disabled = false;
+  document.getElementById("invoiceBtn").disabled = false;
+}
+
+function recomputeTotal(row) {
+  row.Total = row["leg"] + row["wings"] + row["lollipop"] + row["chops"] + row["bone chilli"]
+    + 0.8 * (row["chest softa"] + row["chest for chilli"]);
+  return row.Total;
+}
+
+// ---------- CSV export ----------
+function toCsv(rows) {
+  const columns = ["Date", "Slot", ...PRODUCTS, "Total"];
+  const lines = [columns.join(",")];
+  for (const r of rows) {
+    lines.push(columns.map(c => {
+      if (c === "Date" || c === "Slot") return r[c];
+      return fmt(r[c]);
+    }).join(","));
+  }
+  return lines.join("\n");
+}
+
+// ---------- wiring ----------
+let currentRows = [];
+const statusEl = document.getElementById("status");
+
+function runParse() {
+  const raw = document.getElementById("rawInput").value;
+  if (!raw.trim()) {
+    statusEl.textContent = "Paste or load an order log first.";
+    statusEl.className = "status err";
+    return;
+  }
+  const orders = extractOrders(raw);
+  if (!orders.length) {
+    statusEl.textContent = "No matching order blocks found — check the log format.";
+    statusEl.className = "status err";
+    currentRows = [];
+    renderTable(currentRows);
+    return;
+  }
+  currentRows = groupOrders(orders);
+  renderTable(currentRows);
+  statusEl.textContent = `Parsed ${orders.length} order message${orders.length === 1 ? "" : "s"}.`;
+  statusEl.className = "status ok";
+}
+
+document.getElementById("parseBtn").addEventListener("click", runParse);
+
+document.getElementById("clearBtn").addEventListener("click", () => {
+  document.getElementById("rawInput").value = "";
+  currentRows = [];
+  renderTable(currentRows);
+  statusEl.textContent = "";
+  statusEl.className = "status";
+  document.getElementById("invoiceBtn").disabled = true;
+  hideInvoice();
+});
+
+// live-edit: keep Total in sync as quantities are corrected
+document.getElementById("bodyRows").addEventListener("input", (e) => {
+  const t = e.target;
+  if (!t.classList.contains("cell-input")) return;
+  const idx = parseInt(t.dataset.idx, 10);
+  const product = t.dataset.product;
+  const val = parseFloat(t.value);
+  currentRows[idx][product] = isNaN(val) ? 0 : val;
+  recomputeTotal(currentRows[idx]);
+  const totalCell = document.querySelector(`[data-total-idx="${idx}"]`);
+  if (totalCell) totalCell.textContent = fmt(currentRows[idx].Total);
+});
+
+document.getElementById("fileInput").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    document.getElementById("rawInput").value = evt.target.result;
+    statusEl.textContent = `Loaded ${file.name}.`;
+    statusEl.className = "status ok";
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById("downloadBtn").addEventListener("click", () => {
+  if (!currentRows.length) return;
+  const csv = toCsv(currentRows);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const today = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `balaji_orders_${today}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+// =====================================================================
+// Invoice — group each menu item into Broiler / Country chicken / Kadai,
+// then price by kg (broiler, country) or per piece (kadai), separately.
+// =====================================================================
+const DEFAULT_GROUPS = {
+  "leg": "broiler",
+  "chest softa": "broiler",
+  "chest for chilli": "broiler",
+  "wings": "broiler",
+  "chops": "broiler",
+  "bone chilli": "broiler",
+  "lollipop": "broiler",
+  "kadai": "kadai",
+  "country chicken": "country",
+  "kudal": "country"
+};
+const GROUP_LABELS = {
+  broiler: "Broiler chicken (₹/kg)",
+  country: "Country chicken (₹/kg)",
+  kadai: "Kadai (₹/piece)",
+  exclude: "Not invoiced"
+};
+let currentGroups = { ...DEFAULT_GROUPS };
+
+function fmtMoney(n) {
+  return "₹" + (Math.round(n * 100) / 100).toLocaleString("en-IN");
+}
+
+function renderGroupConfig() {
+  const groupBody = document.getElementById("groupBody");
+  groupBody.innerHTML = PRODUCTS.map(p => {
+    const options = Object.keys(GROUP_LABELS).map(key =>
+      `<option value="${key}" ${currentGroups[p] === key ? "selected" : ""}>${GROUP_LABELS[key]}</option>`
+    ).join("");
+    return `<tr><td>${p}</td><td><select class="group-select" data-product="${p}">${options}</select></td></tr>`;
+  }).join("");
+}
+
+document.getElementById("groupBody").addEventListener("change", (e) => {
+  const t = e.target;
+  if (!t.classList.contains("group-select")) return;
+  currentGroups[t.dataset.product] = t.value;
+  if (currentRows.length) buildInvoice();
+});
+
+function computeInvoiceRows(rows, groups, rates) {
+  return rows.map(r => {
+    let broilerQty = 0, countryQty = 0, kadaiQty = 0;
+    PRODUCTS.forEach(p => {
+      const g = groups[p];
+      const val = r[p] || 0;
+      if (g === "broiler") broilerQty += val;
+      else if (g === "country") countryQty += val;
+      else if (g === "kadai") kadaiQty += val;
+    });
+    const broilerAmt = broilerQty * rates.broiler;
+    const countryAmt = countryQty * rates.country;
+    const kadaiAmt = kadaiQty * rates.kadai;
+    return {
+      Date: r.Date, Slot: r.Slot,
+      broilerQty, broilerAmt, countryQty, countryAmt,
+      rowTotal: broilerAmt + countryAmt,
+      kadaiQty, kadaiAmt
+    };
+  });
+}
+
+let currentInvoiceRows = [];
+let currentRates = { broiler: 265, country: 300, kadai: 60 };
+
+function ensureDateDefaults() {
+  if (!currentRows.length) return;
+  const dates = currentRows.map(r => r.Date).slice().sort();
+  const fromInput = document.getElementById("dateFromInput");
+  const toInput = document.getElementById("dateToInput");
+  if (!fromInput.value) fromInput.value = dates[0];
+  if (!toInput.value) toInput.value = dates[dates.length - 1];
+  fromInput.min = dates[0]; fromInput.max = dates[dates.length - 1];
+  toInput.min = dates[0]; toInput.max = dates[dates.length - 1];
+}
+
+function buildInvoice() {
+  currentRates = {
+    broiler: parseFloat(document.getElementById("rateBroiler").value) || 0,
+    country: parseFloat(document.getElementById("rateCountry").value) || 0,
+    kadai: parseFloat(document.getElementById("rateKadai").value) || 0
+  };
+  const dateFrom = document.getElementById("dateFromInput").value;
+  const dateTo = document.getElementById("dateToInput").value;
+  const filtered = currentRows.filter(r =>
+    (!dateFrom || r.Date >= dateFrom) && (!dateTo || r.Date <= dateTo)
+  );
+  currentInvoiceRows = computeInvoiceRows(filtered, currentGroups, currentRates);
+  renderInvoiceTables();
+}
+
+function renderInvoiceTables() {
+  const invoiceBody = document.getElementById("invoiceBody");
+  const kadaiBody = document.getElementById("kadaiBody");
+
+  const billTo = document.getElementById("billToInput").value.trim();
+  const dateFrom = document.getElementById("dateFromInput").value;
+  const dateTo = document.getElementById("dateToInput").value;
+  const periodText = (dateFrom || dateTo) ? `Period ${dateFrom || "…"} to ${dateTo || "…"}. ` : "";
+  const toText = billTo ? `To: ${billTo}. ` : "";
+  document.getElementById("invoiceMeta").textContent = toText + periodText + "Broiler & country chicken, priced per kg.";
+  document.getElementById("kadaiMeta").textContent = toText + periodText + "Priced per piece — kept as its own receipt.";
+
+  if (!currentInvoiceRows.length) {
+    invoiceBody.innerHTML = `<tr><td colspan="9" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
+    kadaiBody.innerHTML = `<tr><td colspan="5" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
+  } else {
+    invoiceBody.innerHTML = currentInvoiceRows.map(r => `
+      <tr>
+        <td>${r.Date}</td><td>${r.Slot}</td>
+        <td>${fmt(r.broilerQty)}</td><td>${fmt(currentRates.broiler)}</td><td>${fmt(r.broilerAmt)}</td>
+        <td>${fmt(r.countryQty)}</td><td>${fmt(currentRates.country)}</td><td>${fmt(r.countryAmt)}</td>
+        <td class="total">${fmt(r.rowTotal)}</td>
+      </tr>`).join("");
+
+    const kadaiRowsFiltered = currentInvoiceRows.filter(r => r.kadaiQty > 0);
+    kadaiBody.innerHTML = (kadaiRowsFiltered.length ? kadaiRowsFiltered : currentInvoiceRows).map(r => `
+      <tr>
+        <td>${r.Date}</td><td>${r.Slot}</td>
+        <td>${fmt(r.kadaiQty)}</td><td>${fmt(currentRates.kadai)}</td><td>${fmt(r.kadaiAmt)}</td>
+      </tr>`).join("");
+  }
+
+  const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
+  const kadaiTotal = currentInvoiceRows.reduce((s, r) => s + r.kadaiAmt, 0);
+  document.getElementById("invoiceTotalDisplay").textContent = fmtMoney(invoiceTotal);
+  document.getElementById("kadaiTotalDisplay").textContent = fmtMoney(kadaiTotal);
+  updateGrandTotal();
+
+  document.getElementById("invoiceConfigPanel").style.display = "block";
+  document.getElementById("invoiceSection").style.display = "block";
+  document.getElementById("kadaiSection").style.display = "block";
+  document.getElementById("grandTotalPanel").style.display = "block";
+  document.getElementById("invoiceActionsRow").style.display = "flex";
+  document.getElementById("invoiceCsvBtn").style.display = "inline-block";
+  document.getElementById("printBtn").style.display = "inline-block";
+  document.getElementById("downloadPdfBtn").style.display = "inline-block";
+}
+
+function updateGrandTotal() {
+  const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
+  const kadaiTotal = currentInvoiceRows.reduce((s, r) => s + r.kadaiAmt, 0);
+  const advance = parseFloat(document.getElementById("advanceInput").value) || 0;
+  const grand = invoiceTotal + kadaiTotal - advance;
+  document.getElementById("grandTotalDisplay").textContent = fmtMoney(grand);
+}
+
+function hideInvoice() {
+  currentInvoiceRows = [];
+  document.getElementById("invoiceConfigPanel").style.display = "none";
+  document.getElementById("invoiceSection").style.display = "none";
+  document.getElementById("kadaiSection").style.display = "none";
+  document.getElementById("grandTotalPanel").style.display = "none";
+  document.getElementById("invoiceActionsRow").style.display = "none";
+  document.getElementById("dateFromInput").value = "";
+  document.getElementById("dateToInput").value = "";
+}
+
+document.getElementById("invoiceBtn").addEventListener("click", () => {
+  renderGroupConfig();
+  ensureDateDefaults();
+  buildInvoice();
+  document.getElementById("invoiceConfigPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+["rateBroiler", "rateCountry", "rateKadai", "dateFromInput", "dateToInput"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    if (currentRows.length) buildInvoice();
+  });
+});
+document.getElementById("billToInput").addEventListener("input", () => {
+  if (currentInvoiceRows.length || currentRows.length) {
+    const billTo = document.getElementById("billToInput").value.trim();
+    const dateFrom = document.getElementById("dateFromInput").value;
+    const dateTo = document.getElementById("dateToInput").value;
+    const periodText = (dateFrom || dateTo) ? `Period ${dateFrom || "…"} to ${dateTo || "…"}. ` : "";
+    const toText = billTo ? `To: ${billTo}. ` : "";
+    document.getElementById("invoiceMeta").textContent = toText + periodText + "Broiler & country chicken, priced per kg.";
+    document.getElementById("kadaiMeta").textContent = toText + periodText + "Priced per piece — kept as its own receipt.";
+  }
+});
+
+document.getElementById("advanceInput").addEventListener("input", updateGrandTotal);
+
+document.getElementById("invoiceCsvBtn").addEventListener("click", () => {
+  if (!currentInvoiceRows.length) return;
+  const billTo = document.getElementById("billToInput").value.trim();
+  const dateFrom = document.getElementById("dateFromInput").value;
+  const dateTo = document.getElementById("dateToInput").value;
+  const lines = [];
+  if (billTo) lines.push(`To,${billTo}`);
+  if (dateFrom || dateTo) lines.push(`Period,${dateFrom || ""} to ${dateTo || ""}`);
+  if (lines.length) lines.push("");
+  lines.push("Date,Slot,B.Chicken kg,Rate,Amount,C.Chicken kg,Rate,Amount,Row Total");
+  currentInvoiceRows.forEach(r => {
+    lines.push([r.Date, r.Slot, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
+      fmt(r.countryQty), fmt(currentRates.country), fmt(r.countryAmt), fmt(r.rowTotal)].join(","));
+  });
+  lines.push("");
+  lines.push("Date,Slot,Kadai Qty,Rate,Amount");
+  currentInvoiceRows.forEach(r => {
+    lines.push([r.Date, r.Slot, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)].join(","));
+  });
+  const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
+  const kadaiTotal = currentInvoiceRows.reduce((s, r) => s + r.kadaiAmt, 0);
+  const advance = parseFloat(document.getElementById("advanceInput").value) || 0;
+  lines.push("");
+  lines.push(`Invoice total,,,,${fmt(invoiceTotal)}`);
+  lines.push(`Kadai total,,,,${fmt(kadaiTotal)}`);
+  lines.push(`Advance,,,,${fmt(advance)}`);
+  lines.push(`Grand total due,,,,${fmt(invoiceTotal + kadaiTotal - advance)}`);
+
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const today = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `balaji_invoice_${today}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById("printBtn").addEventListener("click", () => window.print());
+
+document.getElementById("downloadPdfBtn").addEventListener("click", () => {
+  if (!currentInvoiceRows.length || !window.jspdf) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const billTo = document.getElementById("billToInput").value.trim();
+  const dateFrom = document.getElementById("dateFromInput").value;
+  const dateTo = document.getElementById("dateToInput").value;
+
+  doc.setFontSize(17);
+  doc.text("Balaji Hotel — Invoice", 14, 18);
+  doc.setFontSize(10);
+  let y = 26;
+  if (billTo) { doc.text(`To: ${billTo}`, 14, y); y += 6; }
+  if (dateFrom || dateTo) { doc.text(`Period: ${dateFrom || "…"} to ${dateTo || "…"}`, 14, y); y += 6; }
+
+  doc.autoTable({
+    startY: y + 2,
+    head: [["Date", "Slot", "B.Chicken kg", "Rate", "Amount", "C.Chicken kg", "Rate", "Amount", "Total"]],
+    body: currentInvoiceRows.map(r => [
+      r.Date, r.Slot, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
+      fmt(r.countryQty), fmt(currentRates.country), fmt(r.countryAmt), fmt(r.rowTotal)
+    ]),
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [193, 68, 14] }
+  });
+
+  let y2 = doc.lastAutoTable.finalY + 12;
+  doc.setFontSize(12);
+  doc.text("Kadai", 14, y2);
+  y2 += 4;
+  const kadaiRows = currentInvoiceRows.filter(r => r.kadaiQty > 0);
+  doc.autoTable({
+    startY: y2,
+    head: [["Date", "Slot", "Qty", "Rate", "Amount"]],
+    body: (kadaiRows.length ? kadaiRows : currentInvoiceRows).map(r => [
+      r.Date, r.Slot, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)
+    ]),
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [227, 160, 8] }
+  });
+
+  const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
+  const kadaiTotal = currentInvoiceRows.reduce((s, r) => s + r.kadaiAmt, 0);
+  const advance = parseFloat(document.getElementById("advanceInput").value) || 0;
+  const grand = invoiceTotal + kadaiTotal - advance;
+
+  let y3 = doc.lastAutoTable.finalY + 12;
+  doc.setFontSize(11);
+  doc.text(`Invoice total: ${fmtMoney(invoiceTotal)}`, 14, y3); y3 += 6;
+  doc.text(`Kadai total: ${fmtMoney(kadaiTotal)}`, 14, y3); y3 += 6;
+  doc.text(`Advance paid: ${fmtMoney(advance)}`, 14, y3); y3 += 9;
+  doc.setFontSize(14);
+  doc.setTextColor(193, 68, 14);
+  doc.text(`Grand total due: ${fmtMoney(grand)}`, 14, y3);
+
+  const today = new Date().toISOString().slice(0, 10);
+  doc.save(`balaji_invoice_${today}.pdf`);
+});
+
+renderTable([]);
+</script>
+</body>
+</html>
