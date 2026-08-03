@@ -396,7 +396,7 @@ country chicken"></textarea>
       <table id="invoiceTable">
         <thead>
           <tr>
-            <th style="text-align:left;">Date</th><th style="text-align:left;">Slot</th>
+            <th style="text-align:left;">Date</th>
             <th>B.Chicken</th><th>Rate</th><th>Amount</th>
             <th>C.Chicken</th><th>Rate</th><th>Amount</th>
             <th>Total</th>
@@ -413,7 +413,7 @@ country chicken"></textarea>
     <div class="receipt-meta" id="kadaiMeta"></div>
     <div class="table-scroll">
       <table id="kadaiTable">
-        <thead><tr><th style="text-align:left;">Date</th><th style="text-align:left;">Slot</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+        <thead><tr><th style="text-align:left;">Date</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
         <tbody id="kadaiBody"></tbody>
       </table>
     </div>
@@ -475,17 +475,19 @@ function parseQuantity(qtyStrRaw) {
 }
 
 // ---------- item / quantity split ----------
+// Find the first quantity token anywhere in the line (e.g. "Veetuku 1kg chops")
 function extractQtyAndItem(lineRaw) {
   const line = (lineRaw || "").toLowerCase().trim();
+  if (!line) return [null, null];
 
-  let m = line.match(/^([0-9/]+|half|[\d.]+)\s*(kg)?\s*(.*)$/);
+  // match quantities like: 11/2, 1/2, half, 1.5, 1kg, 1 kg
+  const m = line.match(/([0-9]+(?:\/\d+)?|half|[\d.]+)\s*(kg)?/);
   if (m) {
-    return [parseQuantity(m[1]), (m[3] || "").trim()];
-  }
-
-  m = line.match(/^(.*?)([0-9/]+|half|[\d.]+)\s*kg$/);
-  if (m) {
-    return [parseQuantity(m[2]), (m[1] || "").trim()];
+    const qtyStr = m[1];
+    const qty = parseQuantity(qtyStr);
+    // remove the matched token from the line to leave the item name
+    const item = (line.slice(0, m.index) + line.slice(m.index + m[0].length)).trim();
+    return [qty, item];
   }
 
   return [null, null];
@@ -525,29 +527,35 @@ function matchProduct(rawLine) {
 
 // ---------- order extraction ----------
 function extractOrders(rawText) {
-  const pattern = /\[(\d{1,2}:\d{2}\s*[APMapm]{2}),\s*(\d{1,2}\/\d{1,2}\/\d{4})\]\s*Balaji Hotel:([\s\S]*?)(?=\[\d{1,2}:\d{2}\s*[APMapm]{2},\s*\d{1,2}\/\d{1,2}\/\d{4}\]|$)/g;
+  // Match bracketed header with two comma-separated parts (either date,time or time,date).
+  const pattern = /\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*\]\s*Balaji Hotel:([\s\S]*?)(?=\[\s*[^,\]]+\s*,\s*[^,\]]+\s*\]\s*Balaji Hotel:|$)/g;
 
   const orders = [];
   let match;
   while ((match = pattern.exec(rawText)) !== null) {
-    const [, timeStr, dateStr, itemsRaw] = match;
+    const partA = match[1].trim();
+    const partB = match[2].trim();
+    const itemsRaw = match[3];
 
-    const dateParts = dateStr.trim().split("/");
-    if (dateParts.length !== 3) continue;
+    // figure out which part is the time (contains ':' or am/pm)
+    let timeStrRaw, dateStrRaw;
+    if (/\d{1,2}:\d{2}/.test(partA) || /[ap]m/i.test(partA)) { timeStrRaw = partA; dateStrRaw = partB; }
+    else { timeStrRaw = partB; dateStrRaw = partA; }
+
+    const dateParts = dateStrRaw.split("/").map(s => s.trim()).filter(Boolean);
+    if (dateParts.length < 2) continue;
     const dd = parseInt(dateParts[0], 10);
     const mm = parseInt(dateParts[1], 10);
-    const yyyy = parseInt(dateParts[2], 10);
+    const yyyy = dateParts[2] ? parseInt(dateParts[2], 10) : (new Date()).getFullYear();
     if (!dd || !mm || !yyyy) continue;
-    // Roll overflowing days into the next month (e.g. 31 June -> 1 July)
-// Order date
-const dateObj = new Date(yyyy, mm - 1, dd);
 
-// Invoice date = next day
-dateObj.setDate(dateObj.getDate() + 1);
+    const dateObj = new Date(yyyy, mm - 1, dd);
+    // keep previous behaviour: invoice/order date = next day
+    dateObj.setDate(dateObj.getDate() + 1);
+    const dateIso = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
 
-const dateIso = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
+    const slot = /pm/i.test(timeStrRaw) ? "PM" : "AM";
 
-const slot = timeStr.trim().slice(-2).toUpperCase();
     const order = {};
     PRODUCTS.forEach(p => order[p] = 0);
     order.Date = dateIso;
@@ -852,13 +860,13 @@ function renderInvoiceTables() {
   document.getElementById("invoiceMeta").innerHTML = metaParts.join(" &nbsp; ");
   document.getElementById("kadaiMeta").innerHTML = "";
 
-  if (!currentInvoiceRows.length) {
-    invoiceBody.innerHTML = `<tr><td colspan="9" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
-    kadaiBody.innerHTML = `<tr><td colspan="5" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
+    if (!currentInvoiceRows.length) {
+    invoiceBody.innerHTML = `<tr><td colspan="8" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
+    kadaiBody.innerHTML = `<tr><td colspan="4" class="empty" style="text-align:center;">No orders fall inside this date range.</td></tr>`;
   } else {
     invoiceBody.innerHTML = currentInvoiceRows.map(r => `
       <tr>
-        <td>${r.Date}</td><td>${r.Slot}</td>
+        <td>${r.Date}</td>
         <td>${fmt(r.broilerQty)}</td><td>${fmt(currentRates.broiler)}</td><td>${fmt(r.broilerAmt)}</td>
         <td>${fmt(r.countryQty)}</td><td>${fmt(currentRates.country)}</td><td>${fmt(r.countryAmt)}</td>
         <td class="total">${fmt(r.rowTotal)}</td>
@@ -867,7 +875,7 @@ function renderInvoiceTables() {
     const kadaiRowsFiltered = currentInvoiceRows.filter(r => r.kadaiQty > 0);
     kadaiBody.innerHTML = (kadaiRowsFiltered.length ? kadaiRowsFiltered : currentInvoiceRows).map(r => `
       <tr>
-        <td>${r.Date}</td><td>${r.Slot}</td>
+        <td>${r.Date}</td>
         <td>${fmt(r.kadaiQty)}</td><td>${fmt(currentRates.kadai)}</td><td>${fmt(r.kadaiAmt)}</td>
       </tr>`).join("");
   }
@@ -934,7 +942,7 @@ document.getElementById("billToInput").addEventListener("input", () => {
 
 document.getElementById("advanceInput").addEventListener("input", updateGrandTotal);
 
-document.getElementById("invoiceCsvBtn").addEventListener("click", () => {
+  document.getElementById("invoiceCsvBtn").addEventListener("click", () => {
   if (!currentInvoiceRows.length) return;
   const billTo = document.getElementById("billToInput").value.trim();
   const dateFrom = document.getElementById("dateFromInput").value;
@@ -943,15 +951,15 @@ document.getElementById("invoiceCsvBtn").addEventListener("click", () => {
   if (billTo) lines.push(`To,${billTo}`);
   if (dateFrom || dateTo) lines.push(`Period,${dateFrom || ""} to ${dateTo || ""}`);
   if (lines.length) lines.push("");
-  lines.push("Date,Slot,B.Chicken kg,Rate,Amount,C.Chicken kg,Rate,Amount,Row Total");
+  lines.push("Date,B.Chicken kg,Rate,Amount,C.Chicken kg,Rate,Amount,Row Total");
   currentInvoiceRows.forEach(r => {
-    lines.push([r.Date, r.Slot, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
+    lines.push([r.Date, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
       fmt(r.countryQty), fmt(currentRates.country), fmt(r.countryAmt), fmt(r.rowTotal)].join(","));
   });
   lines.push("");
-  lines.push("Date,Slot,Kadai Qty,Rate,Amount");
+  lines.push("Date,Kadai Qty,Rate,Amount");
   currentInvoiceRows.forEach(r => {
-    lines.push([r.Date, r.Slot, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)].join(","));
+    lines.push([r.Date, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)].join(","));
   });
   const invoiceTotal = currentInvoiceRows.reduce((s, r) => s + r.rowTotal, 0);
   const kadaiTotal = currentInvoiceRows.reduce((s, r) => s + r.kadaiAmt, 0);
@@ -995,9 +1003,9 @@ document.getElementById("downloadPdfBtn").addEventListener("click", () => {
 
   doc.autoTable({
     startY: y + 2,
-    head: [["Date", "Slot", "B.Chicken kg", "Rate", "Amount", "C.Chicken kg", "Rate", "Amount", "Total"]],
+    head: [["Date", "B.Chicken kg", "Rate", "Amount", "C.Chicken kg", "Rate", "Amount", "Total"]],
     body: currentInvoiceRows.map(r => [
-      r.Date, r.Slot, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
+      r.Date, fmt(r.broilerQty), fmt(currentRates.broiler), fmt(r.broilerAmt),
       fmt(r.countryQty), fmt(currentRates.country), fmt(r.countryAmt), fmt(r.rowTotal)
     ]),
     styles: { fontSize: 9 },
@@ -1011,9 +1019,9 @@ document.getElementById("downloadPdfBtn").addEventListener("click", () => {
   const kadaiRows = currentInvoiceRows.filter(r => r.kadaiQty > 0);
   doc.autoTable({
     startY: y2,
-    head: [["Date", "Slot", "Qty", "Rate", "Amount"]],
+    head: [["Date", "Qty", "Rate", "Amount"]],
     body: (kadaiRows.length ? kadaiRows : currentInvoiceRows).map(r => [
-      r.Date, r.Slot, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)
+      r.Date, fmt(r.kadaiQty), fmt(currentRates.kadai), fmt(r.kadaiAmt)
     ]),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [227, 160, 8] }
