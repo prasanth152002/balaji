@@ -795,24 +795,14 @@ let currentInvoiceRows = [];
 let currentRates = { broiler: 265, country: 300, kadai: 60 };
 
 function ensureDateDefaults() {
-    if (!currentRows.length) return;
-
-    const dates = currentRows
-        .map(r => r.Date)
-        .sort();
-
-    const fromInput = document.getElementById("dateFromInput");
-    const toInput = document.getElementById("dateToInput");
-
-    // Always reset to parsed range
-    fromInput.value = dates[0];
-    toInput.value = dates[dates.length - 1];
-
-    fromInput.min = dates[0];
-    fromInput.max = dates[dates.length - 1];
-
-    toInput.min = dates[0];
-    toInput.max = dates[dates.length - 1];
+  if (!currentRows.length) return;
+  const dates = currentRows.map(r => r.Date).slice().sort();
+  const fromInput = document.getElementById("dateFromInput");
+  const toInput = document.getElementById("dateToInput");
+  if (!fromInput.value) fromInput.value = dates[0];
+  if (!toInput.value) toInput.value = dates[dates.length - 1];
+  fromInput.min = dates[0]; fromInput.max = dates[dates.length - 1];
+  toInput.min = dates[0]; toInput.max = dates[dates.length - 1];
 }
 
 function buildInvoice() {
