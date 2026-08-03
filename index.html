@@ -533,9 +533,14 @@ function extractOrders(rawText) {
     const yyyy = parseInt(dateParts[2], 10);
     if (!dd || !mm || !yyyy) continue;
     // Roll overflowing days into the next month (e.g. 31 June -> 1 July)
-    const dateObj = new Date(yyyy, mm - 1, dd);
-    const dateIso = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
-    const slot = timeStr.trim().slice(-2).toUpperCase();
+    // Order date
+const orderDate = new Date(yyyy, mm - 1, dd);
+
+// Invoice date = next day
+orderDate.setDate(orderDate.getDate() + 1);
+
+const dateIso =
+`${orderDate.getFullYear()}-${String(orderDate.getMonth()+1).padStart(2,"0")}-${String(orderDate.getDate()).padStart(2,"0")}`;
 
     const order = {};
     PRODUCTS.forEach(p => order[p] = 0);
